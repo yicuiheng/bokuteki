@@ -1,0 +1,96 @@
+# Bokuteki
+
+Bokuteki は yicuiheng のための軽量ドキュメント記述言語である。
+Markdown を基にしているが yicuiheng が使わない昨日は実装せず、欲しい機能を実装している。
+具体的には以下を実装している
+
+- 見出し (not implemented)
+- 段落 (not implemented)
+- 強調/斜体/small-caps など (not implemented)
+- (順序なし|順序つき) リスト (not implemented)
+- 引用 (not implemented)
+- リンク (not implemented)
+- チェックボックス (not implemented)
+- 数式環境 (定理、補題、定義、証明) (not implemented)
+- (インライン|ブロック) 数式 (not implemented)
+- (インライン|ブロック) コード (not implemented)
+- コード分割 (not implemented)
+
+## 使い方
+
+
+単一の Bokuteki ファイル `hoge.bok` を単一のファイル `hoge.html` に変換するには以下を実行すればよい。
+```
+$ bokuteki hoge.bok -o hoge.html
+```
+
+Sururi ファイル `index.bok` をルートとする Bokuteki プロジェクトから HTML 群を `dist` ディレクトリに出力するには以下を実行すればよい
+```
+$ bokuteki index.bok -o ./dist
+```
+詳しくは後述。
+
+## 文法
+
+### 見出し
+### 段落
+
+### 強調/斜体/small-caps など
+### (順序なし|順序つき)リスト
+### 引用
+### リンク
+### チェックボックス
+
+[x] hoge
+[ ] fuga
+[x] piyo
+
+### 数式環境 (定理、補題、定義、証明)
+
+```
+theorem. <定理の名前>
+  定理の statement
+```
+
+```
+lemma. <補題の名前>
+  補題の statement
+```
+
+```
+definition. <定義の名前>
+  定義
+
+```
+
+
+
+### (インライン|ブロック) 数式
+
+$\frac{x}{y}$ はインラインで表示されるが
+$$
+  \frac{x}{y}
+$$
+は別行立てで表示される
+
+### (インライン|ブロック) コード
+
+`hoge` はインラインで表示されるが
+```
+  hoge
+```
+はコードブロックとして表示される。
+
+```c
+int main() {
+    return 0;
+}
+```
+のようにシンタックスハイライトのために言語を指定できる。
+
+### コード分割
+
+```
+import hoge; // 同じディレクトリの hoge.bok を読み込む
+import hoge.fuga; // ./hoge/fuga.bok を読み込む
+```
