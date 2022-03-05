@@ -1,0 +1,24 @@
+Markdown と同様にコードブロックを書けます
+
+```
+int main() {
+    printf("Hello, World!\n");
+    return 0;
+}
+```
+
+言語指定もできるよ！
+```bash
+$ do-something | grep "what you need"
+```
+
+引用の中でもできます
+
+> ```
+> $
+> ```
+
+
+# ```
+# でも見出しの中でこういう風に使うのは無理です
+# ```

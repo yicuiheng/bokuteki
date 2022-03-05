@@ -4,16 +4,16 @@ Bokuteki は yicuiheng のための軽量ドキュメント記述言語である
 Markdown を基にしているが yicuiheng が使わない昨日は実装せず、欲しい機能を実装している。
 具体的には以下を実装している
 
-- 見出し (not implemented)
-- 段落 (not implemented)
+- 見出し
+- 段落
 - 強調/斜体/small-caps など (not implemented)
-- (順序なし|順序つき) リスト (not implemented)
-- 引用 (not implemented)
+- (順序なし|順序つき) リスト (partially implemented)
+- 引用
 - リンク (not implemented)
 - チェックボックス (not implemented)
-- 数式環境 (定理、補題、定義、証明) (not implemented)
-- (インライン|ブロック) 数式 (not implemented)
-- (インライン|ブロック) コード (not implemented)
+- 数式環境 (定理、補題、定義、証明)
+- (インライン|ブロック) 数式
+- (インライン|ブロック) コード
 - コード分割 (not implemented)
 
 ## 使い方
@@ -37,32 +37,64 @@ $ bokuteki index.bok -o ./dist
 
 ### 強調/斜体/small-caps など
 ### (順序なし|順序つき)リスト
+
+ハイフン (`-`) 始まりは順序なしリストを表します
+- hoge
+- fuga
+- piyo
+
+リストのネストもできます
+- foo
+  - foofoo
+- bar
+  - foobar
+    - foobarbaz
+    - dayo
+  - neko
+- baz 
+
 ### 引用
 ### リンク
 ### チェックボックス
 
-[x] hoge
-[ ] fuga
-[x] piyo
+- [x] hoge
+- [ ] fuga
+- [x] piyo
 
 ### 数式環境 (定理、補題、定義、証明)
 
+theorem. 定理の名前
+  定理の statement
+
 ```
-theorem. <定理の名前>
+theorem. 定理の名前
   定理の statement
 ```
 
+lemma. 補題の名前
+  補題の statement
+  
 ```
-lemma. <補題の名前>
+lemma. 補題の名前
   補題の statement
 ```
 
-```
 definition. <定義の名前>
   定義
 
 ```
+definition. <定義の名前>
+  定義
+```
 
+proof.
+  $\Gamma \vdash e \colon \tau$ の導出に関する帰納法による。
+  - %T-Var% の場合:
+    自明
+  - %T-App% の場合:
+    自明
+  - そのほかの場合:
+    自明っちゃあ自明
 
 
 ### (インライン|ブロック) 数式

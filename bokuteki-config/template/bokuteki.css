@@ -1,0 +1,100 @@
+:root {
+    --theorem-theme-color: crimson;
+    --theorem-title-color: white;
+    --theorem-shadow-color: lightgray;
+    --statement-base-color: white;
+}
+
+blockquote, body, dd, dl, dt, li, ol, p, pre, textarea, ul {
+    margin: 0;
+    padding: 0;
+}
+
+.theorem {
+    border-style: solid;
+    border-top-color: var(--theorem-theme-color);
+    border-bottom-width: 2pt;
+    border-bottom-color: var(--theorem-theme-color);
+    padding: 0px;
+    background-color: var(--statement-base-color);
+}
+
+.theorem-title {
+    background-color: var(--theorem-theme-color);
+    padding-bottom: 4pt;
+    padding-left: 1em;
+    color: var(--theorem-title-color);
+}
+
+.statement {
+    padding: 0px 1em;
+}
+
+.proof-divider {
+    margin: 4pt;
+}
+
+.proof {
+    padding: 4pt 1em;
+    border-left-style: solid;
+    border-left-width: 4pt;
+    border-left-color: darkblue;
+    background-color: lightcyan;
+}
+
+.math-cases {
+    list-style-type: circle;
+    padding-left: 1em;
+}
+
+.proof-content {
+    padding-left: 1em;
+}
+
+.proof-endmark {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.small-caps {
+    font-variant: small-caps;
+}
+
+blockquote {
+    padding: 0.5em;
+    margin: 1em;
+    border-left: 0.5em solid darkgray;
+}
+
+body {
+    font-size: 1em;
+    font-weight: 400;
+    line-height: 1.5;
+    font-family: BlinkMacSystemFont,-apple-system,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+
+*, ::after, ::before {
+    box-sizing: inherit;
+}
+
+div {
+    display: block;
+}
+ul {
+    padding-left: 2rem;
+}
+
+code, pre {
+    border-color: #c0c0c0;
+    border-width: 1px;
+    border-radius: 2px;
+    background-color: #e5e5e5;
+    padding: 0.2rem 0.3rem;
+    margin: 0 0.2rem;
+    font-family: monospace;
+}
+
+.block {
+    margin: 16px;
+}
+
