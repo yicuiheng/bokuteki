@@ -1,8 +1,8 @@
 use crate::document::*;
 use std::collections::VecDeque;
 
-type Error = String; // TODO: マシなエラー型をつける
-type Warning = String; // TODO: マシな警告型をつける
+pub type Error = String; // TODO: マシなエラー型をつける
+pub type Warning = String; // TODO: マシな警告型をつける
 
 pub struct ParseResult<V, R> {
     pub value: V,
@@ -269,12 +269,9 @@ fn parse_theorem_block_element(
     };
 
     let inner_range = lift_block_range(src, "  ", rest_range);
-    if inner_range.value.is_empty() {
-        return parse_error;
-    }
     rest_range = inner_range.rest_range;
-    let mut inner_result = parse_block_elements(src, inner_range.value);
 
+    let mut inner_result = parse_block_elements(src, inner_range.value);
     assert!(inner_result.rest_range.is_empty());
     errors.append(&mut inner_result.errors);
     warnings.append(&mut inner_result.warnings);
