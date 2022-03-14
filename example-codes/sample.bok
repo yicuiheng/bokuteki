@@ -1,49 +1,62 @@
 # Bokuteki
 
 Bokuteki は yicuiheng のための軽量ドキュメント記述言語である。
-Markdown を基にしているが yicuiheng が使わない昨日は実装せず、欲しい機能を実装している。
-具体的には以下を実装している
+Markdown を基にしているが yicuiheng が使わない機能は実装せず、欲しい機能だけを実装している。
+具体的には以下を実装している。
 
 - 見出し
 - 段落
-- 強調/斜体/small-caps など (not implemented)
-- (順序なし|順序つき) リスト (partially implemented)
+- 強調/斜体/small-caps など (partially implemented)
+- (順序なし|順序つき) リスト
 - 引用
 - リンク (not implemented)
 - チェックボックス (not implemented)
 - 数式環境 (定理、補題、定義、証明)
+- 推論規則、導出木 (not implemented)
+- フローチャート、シーケンス図、ダイアグラムなど (mermaid形式) (not implemented)
 - (インライン|ブロック) 数式
 - (インライン|ブロック) コード
 - コード分割 (not implemented)
 
+既存実装の Markdown を使うのに比べて以下の利点がある。
+- 推論規則 など yicuiheng が特別によく使う要素を自分にとって使いやすい形式で書ける
+- yicuiheng にとって不要な機能で無駄に構文解析を複雑にしなくてすむ
+  - 例えばよく使われる Markdown では `*` がリストの prefix なのか斜体の `*` なのか曖昧になりうるが、 Bokuteki ではリストの prefix が `-` に限定されているのでこの曖昧性は生じない
+
 ## 使い方
 
 
-単一の Bokuteki ファイル `hoge.bok` を単一のファイル `hoge.html` に変換するには以下を実行すればよい。
+Bokuteki ファイル `hoge.bok` をルートとするドキュメントを HTML にしたい場合、以下を実行すればよい。
 ```
-$ bokuteki hoge.bok -o hoge.html
+$ bokuteki hoge.bok
 ```
 
-Sururi ファイル `index.bok` をルートとする Bokuteki プロジェクトから HTML 群を `dist` ディレクトリに出力するには以下を実行すればよい
-```
-$ bokuteki index.bok -o ./dist
-```
-詳しくは後述。
+これを実行すると `./output` ディレクトリに結果が出力され、 `./output/index.html` を開くと欲しい結果が得られる。
 
 ## 文法
 
 ### 見出し
+
+よくある Markdown と同様に `#` で始まる行は見出しになる。
+
 ### 段落
 
+
+
 ### 強調/斜体/small-caps など
+
+`%` で囲った文字列は small-caps で表示されます。これは推論規則のルール名などに使われる。
+強調や斜体は未実装。
+
+
 ### (順序なし|順序つき)リスト
 
-ハイフン (`-`) 始まりは順序なしリストを表します
+ハイフン (`-`) 始まりは順序なしリストを表す。
 - hoge
 - fuga
 - piyo
 
-リストのネストもできます
+リストのネストもできる
 - foo
   - foofoo
 - bar
@@ -54,8 +67,19 @@ $ bokuteki index.bok -o ./dist
 - baz 
 
 ### 引用
+
+`>` で始まる行は引用になる
+
+> こんなふうにね
+> ほら
+
 ### リンク
+
+未実装
+
 ### チェックボックス
+
+未実装
 
 - [x] hoge
 - [ ] fuga
@@ -96,6 +120,26 @@ proof.
   - そのほかの場合:
     自明っちゃあ自明
 
+### 推論規則、導出木
+
+推論規則を書ける。
+
+  \Gamma \vdash t_1 \colon \tau \to \tau'
+  \Gamma \vdash t_2 \colon \tau
+---------------------------------------- T-App
+  \Gamma \vdash t_1 \ t_2 \colon \tau'
+
+
+      x\colon\mathtt{Bool} \in x\colon\mathtt{Bool}
+    ------------------------------------------------------ T-Var
+      x\colon\mathtt{Bool} \vdash x  \colon \mathtt{Bool}
+  --------------------------------------------------------------------------------- T-Abs
+    \vdash \lambda x\colon \mathtt{Bool}. x \colon \mathtt{Bool} \to \mathtt{Bool}
+  
+  -------------------------------------------- T-True
+    \vdash \mathtt{true} \colon \mathtt{Bool}
+--------------------------------------------------------------------------------------- T-App
+  \vdash (\lambda x\colon \mathtt{Bool}. x) \mathtt{true} \colon \mathtt{Bool}
 
 ### (インライン|ブロック) 数式
 
