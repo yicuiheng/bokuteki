@@ -128,6 +128,15 @@ fn print_block_element(
             attributes.insert("class", "math-proof");
             print_html_tag("div", attributes, content, indent_depth)
         }
+        BlockElement::Derivation(derivation) => {
+            let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
+            let content = print_derivation(src, derivation, indent_depth + 4, needs_margin);
+            format!(
+                r#"{indent}$$
+{content}
+{indent}$$"#
+            )
+        }
         BlockElement::List {
             mark_kind: _mark_kind,
             items,
@@ -154,6 +163,42 @@ fn print_block_element(
             print_html_tag("blockquote", attributes, inner, indent_depth)
         }
         BlockElement::ParseError => "parse error..".to_string(),
+    }
+}
+
+fn print_derivation(
+    src: &Vec<Vec<char>>,
+    derivation: Derivation,
+    indent_depth: usize,
+    needs_margin: bool,
+) -> String {
+    match derivation {
+        Derivation::InferenceRule {
+            premises,
+            conclusion,
+            ..
+        } => {
+            let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
+            let inner_indent: String = std::iter::repeat(" ").take(indent_depth + 2).collect();
+            let premises = premises
+                .into_iter()
+                .map(|premise| print_derivation(src, premise, indent_depth + 4, needs_margin))
+                .collect::<Vec<_>>()
+                .join("\\ \\ \n");
+            let conclusion = print_inline_elements(src, conclusion, indent_depth + 4);
+            format!(
+                r#"{indent}\dfrac
+{inner_indent}{{
+{premises}
+{inner_indent}}}
+{inner_indent}{{
+{conclusion}
+{inner_indent}}}"#
+            )
+        }
+        Derivation::Leaf(inline_elements) => {
+            print_inline_elements(src, inline_elements, indent_depth)
+        }
     }
 }
 

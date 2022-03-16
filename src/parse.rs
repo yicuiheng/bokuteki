@@ -80,6 +80,16 @@ fn parse_block_element(src: &Vec<Vec<char>>, rest_range: BlockRange) -> ParseBlo
         return result;
     }
 
+    let result = parse_derivation_block_element(src, rest_range.clone());
+    if let Some(derivation) = result.value {
+        return ParseBlockElementResult {
+            value: BlockElement::Derivation(derivation),
+            errors: result.errors,
+            warnings: result.warnings,
+            rest_range: result.rest_range,
+        };
+    }
+
     let result = parse_list_block_element(src, rest_range.clone());
     if result.value != BlockElement::ParseError {
         return result;
@@ -386,6 +396,80 @@ fn parse_proof_block_element(
     }
 }
 
+fn parse_derivation_block_element(
+    src: &Vec<Vec<char>>,
+    mut rest_range: BlockRange,
+) -> ParseResult<Option<Derivation>, BlockRange> {
+    let parse_error = ParseResult {
+        value: None,
+        errors: vec![],
+        warnings: vec![],
+        rest_range: rest_range.clone(),
+    };
+    let mut errors = vec![];
+    let mut warnings = vec![];
+
+    let mut premises_range_result = lift_block_range(src, "  ", rest_range);
+    errors.append(&mut premises_range_result.errors);
+    warnings.append(&mut premises_range_result.warnings);
+    let mut premises: Vec<Derivation> = vec![];
+    let mut premises_rest_range = premises_range_result.value;
+    while !premises_rest_range.is_empty() {
+        let mut premise_result = parse_derivation_block_element(src, premises_rest_range.clone());
+        if let Some(premise) = premise_result.value {
+            errors.append(&mut premise_result.errors);
+            warnings.append(&mut premise_result.warnings);
+            premises.push(premise);
+            premises_rest_range = premise_result.rest_range;
+        } else if let Some(line_range) = premises_rest_range.pop_front() {
+            let inline_elements = parse_inline_elements(src, line_range);
+            premises.push(Derivation::Leaf(inline_elements.value));
+        }
+    }
+    rest_range = premises_range_result.rest_range;
+
+    let mut rule_name_result = if let Some(mut line_range) = rest_range.pop_front() {
+        let mut count = 0;
+        while check_at(src, '-', &line_range) {
+            count += 1;
+            line_range.move_to_next_char();
+        }
+        if count >= 3 {
+            parse_inline_elements(src, line_range)
+        } else {
+            return parse_error;
+        }
+    } else {
+        return parse_error;
+    };
+    errors.append(&mut rule_name_result.errors);
+    warnings.append(&mut rule_name_result.warnings);
+    let rule_name = rule_name_result.value;
+
+    let mut conclusion_range_result = lift_block_range(src, "  ", rest_range);
+    errors.append(&mut conclusion_range_result.errors);
+    warnings.append(&mut conclusion_range_result.warnings);
+    rest_range = conclusion_range_result.rest_range;
+    let mut conclusion: Vec<InlineElement> = vec![];
+    for conclusion_line_range in conclusion_range_result.value {
+        let mut inline_elements_result = parse_inline_elements(src, conclusion_line_range);
+        errors.append(&mut inline_elements_result.errors);
+        warnings.append(&mut inline_elements_result.warnings);
+        conclusion.append(&mut inline_elements_result.value);
+    }
+
+    ParseResult {
+        value: Some(Derivation::InferenceRule {
+            premises,
+            conclusion,
+            rule_name,
+        }),
+        errors,
+        warnings,
+        rest_range,
+    }
+}
+
 fn parse_list_block_element(
     src: &Vec<Vec<char>>,
     mut rest_range: BlockRange,
@@ -511,6 +595,12 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
     //   - リストブロックの始まり
     //   - 引用ブロックの始まり
     fn is_paragraph_end(src: &Vec<Vec<char>>, rest_range: &BlockRange) -> bool {
+        if parse_derivation_block_element(src, rest_range.clone())
+            .value
+            .is_some()
+        {
+            return true;
+        }
         if let Some(line_range) = rest_range.front() {
             starts_with(src, "#", *line_range)
                 || line_range.is_empty()

@@ -24,6 +24,7 @@ pub enum BlockElement {
     Proof {
         content: Vec<BlockElement>,
     },
+    Derivation(Derivation),
     List {
         mark_kind: ListMarkKind,
         items: Vec<ListItem>,
@@ -32,6 +33,16 @@ pub enum BlockElement {
         inner: Vec<BlockElement>,
     },
     ParseError,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Derivation {
+    InferenceRule {
+        premises: Vec<Derivation>,
+        conclusion: Vec<InlineElement>,
+        rule_name: Vec<InlineElement>,
+    },
+    Leaf(Vec<InlineElement>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
