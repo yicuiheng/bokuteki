@@ -1,4 +1,5 @@
 use crate::document::*;
+use crate::katex;
 use std::collections::HashMap;
 use std::{env, fs, path::Path};
 
@@ -104,13 +105,8 @@ fn print_block_element(
             )
         }
         BlockElement::Math { lines } => {
-            let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
             let content = verbatim_block_content(src, &lines);
-            format!(
-                r#"{indent}$$
-{content}
-{indent}$$"#
-            )
+            katex::render(content, true)
         }
         BlockElement::Theorem {
             kind: _kind,
@@ -128,15 +124,7 @@ fn print_block_element(
             attributes.insert("class", "math-proof");
             print_html_tag("div", attributes, content, indent_depth)
         }
-        BlockElement::Derivation(derivation) => {
-            let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
-            let content = print_derivation(src, derivation, indent_depth + 4, needs_margin);
-            format!(
-                r#"{indent}$$
-{content}
-{indent}$$"#
-            )
-        }
+        BlockElement::Derivation(derivation) => print_derivation(src, derivation),
         BlockElement::List {
             mark_kind: _mark_kind,
             items,
@@ -166,38 +154,68 @@ fn print_block_element(
     }
 }
 
-fn print_derivation(
+fn print_derivation(src: &Vec<Vec<char>>, derivation: Derivation) -> String {
+    let (katex_src, inner_elements) = print_derivation_impl(src, derivation, vec![]);
+    let content = katex::render(katex_src, true);
+    inner_elements
+        .into_iter()
+        .enumerate()
+        .fold(content, |acc, (count, inner)| {
+            let mark = format!("bokuteki inner element {}", count);
+            acc.as_str().replacen(&mark, &inner, 2)
+        })
+}
+
+fn print_derivation_impl(
     src: &Vec<Vec<char>>,
     derivation: Derivation,
-    indent_depth: usize,
-    needs_margin: bool,
-) -> String {
+    mut inner_elements: Vec<String>,
+) -> (String, Vec<String>) {
+    fn make_fresh_mark(count: usize) -> String {
+        format!("\\text{{bokuteki inner element {}}}", count)
+    }
+
     match derivation {
         Derivation::InferenceRule {
             premises,
             conclusion,
-            ..
+            rule_name,
         } => {
-            let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
-            let inner_indent: String = std::iter::repeat(" ").take(indent_depth + 2).collect();
-            let premises = premises
+            let mut premise_katex_srcs = vec![];
+            for premise in premises {
+                let (premise_katex_src, inner_elements_) =
+                    print_derivation_impl(src, premise, inner_elements);
+                premise_katex_srcs.push(premise_katex_src);
+                inner_elements = inner_elements_;
+            }
+            let premises_katex_src = premise_katex_srcs
                 .into_iter()
-                .map(|premise| print_derivation(src, premise, indent_depth + 4, needs_margin))
                 .collect::<Vec<_>>()
-                .join("\\ \\ \n");
-            let conclusion = print_inline_elements(src, conclusion, indent_depth + 4);
-            format!(
-                r#"{indent}\dfrac
-{inner_indent}{{
-{premises}
-{inner_indent}}}
-{inner_indent}{{
-{conclusion}
-{inner_indent}}}"#
-            )
+                .join("\\ \\ ");
+
+            let conclusion_mark = make_fresh_mark(inner_elements.len());
+            let conclusion_katex_src = conclusion_mark;
+            inner_elements.push(print_inline_elements(src, conclusion, 0));
+
+            if rule_name.is_empty() {
+                let katex_src =
+                    format!("\\dfrac{{{premises_katex_src}}}{{{conclusion_katex_src}}}");
+
+                (katex_src, inner_elements)
+            } else {
+                let rule_name_mark = make_fresh_mark(inner_elements.len());
+                let rule_name_katex_src = rule_name_mark;
+                inner_elements.push(print_inline_elements(src, rule_name, 0));
+                let katex_src =
+                    format!("\\dfrac{{{premises_katex_src}}}{{{conclusion_katex_src}}} {rule_name_katex_src}");
+                (katex_src, inner_elements)
+            }
         }
         Derivation::Leaf(inline_elements) => {
-            print_inline_elements(src, inline_elements, indent_depth)
+            let inner_element = print_inline_elements(src, inline_elements, 0);
+            let katex_src = make_fresh_mark(inner_elements.len());
+            inner_elements.push(inner_element);
+            (katex_src, inner_elements)
         }
     }
 }
@@ -234,7 +252,7 @@ fn print_inline_element(src: &Vec<Vec<char>>, inline_element: InlineElement) -> 
                 result.push(c);
                 range.move_to_next_char();
             }
-            format!("${}$", result)
+            katex::render(result, false)
         }
         InlineElement::Code { mut range } => {
             let mut result = String::new();

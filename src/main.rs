@@ -1,5 +1,6 @@
 mod compile;
 mod document;
+mod katex;
 mod lsp;
 mod parse;
 mod print;

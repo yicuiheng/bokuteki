@@ -706,6 +706,9 @@ fn parse_inline_element(
             || !parse_inline_code_element(src, &rest_range)
                 .value
                 .is_parse_error()
+            || !parse_inline_small_caps_element(src, &rest_range)
+                .value
+                .is_parse_error()
         {
             let inline_range = InlineRange {
                 line: rest_range.line,

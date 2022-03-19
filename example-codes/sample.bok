@@ -124,22 +124,22 @@ proof.
 
 推論規則を書ける。
 
-  \Gamma \vdash t_1 \colon \tau \to \tau'
-  \Gamma \vdash t_2 \colon \tau
----------------------------------------- T-App
-  \Gamma \vdash t_1 \ t_2 \colon \tau'
+  $\Gamma \vdash t_1 \colon \tau \to \tau'$
+  $\Gamma \vdash t_2 \colon \tau$
+---------------------------------------- %T-App%
+  $\Gamma \vdash t_1 \ t_2 \colon \tau'$
 
 
-      x\colon\mathtt{Bool} \in x\colon\mathtt{Bool}
-    ------------------------------------------------------ T-Var
-      x\colon\mathtt{Bool} \vdash x  \colon \mathtt{Bool}
-  --------------------------------------------------------------------------------- T-Abs
-    \vdash \lambda x\colon \mathtt{Bool}.\ x \colon \mathtt{Bool} \to \mathtt{Bool}
+      $x\colon\mathtt{Bool} \in x\colon\mathtt{Bool}$
+    ------------------------------------------------------ %T-Var%
+      $x\colon\mathtt{Bool} \vdash x  \colon \mathtt{Bool}$
+  -------------------------------------------------------------------------------- %T-Abs%
+    $\vdash \lambda x\colon \mathtt{Bool}.\ x \colon \mathtt{Bool} \to \mathtt{Bool}$
   
-  -------------------------------------------- T-True
-    \vdash \mathtt{true} \colon \mathtt{Bool}
---------------------------------------------------------------------------------------- T-App
-  \vdash (\lambda x\colon \mathtt{Bool}.\ x) \ \mathtt{true} \colon \mathtt{Bool}
+  -------------------------------------------- %T-True%
+    $\vdash \mathtt{true} \colon \mathtt{Bool}$
+--------------------------------------------------------------------------------------- %T-App%
+  $\vdash (\lambda x\colon \mathtt{Bool}.\ x) \ \mathtt{true} \colon \mathtt{Bool}$
 
 ### (インライン|ブロック) 数式
 
