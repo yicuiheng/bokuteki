@@ -573,8 +573,10 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
     let mut errors = vec![];
     let mut warnings = vec![];
 
+    let head_line = rest_range.front().cloned();
+
     // ソース終端もしくは別のブロック要素の始まりまで Inline 要素をパースする
-    while !is_paragraph_end(src, &rest_range) {
+    while !is_paragraph_end(src, &rest_range, &head_line) {
         let rest_line_range = rest_range.pop_front().expect("can not be empty");
         let mut inline_elements_result = parse_inline_elements(src, rest_line_range);
         assert!(inline_elements_result.rest_range.is_empty());
@@ -594,7 +596,12 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
     //   - 証明ブロックの始まり
     //   - リストブロックの始まり
     //   - 引用ブロックの始まり
-    fn is_paragraph_end(src: &Vec<Vec<char>>, rest_range: &BlockRange) -> bool {
+    // ただしコードブロックの終端マーク ("```") もしくは 数式ブロックの終端マーク ("$$") が1行目に出現した場合は、それは段落の終わりではない。
+    fn is_paragraph_end(
+        src: &Vec<Vec<char>>,
+        rest_range: &BlockRange,
+        head_line: &Option<InlineRange>,
+    ) -> bool {
         if parse_derivation_block_element(src, rest_range.clone())
             .value
             .is_some()
@@ -604,8 +611,15 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
         if let Some(line_range) = rest_range.front() {
             starts_with(src, "#", *line_range)
                 || line_range.is_empty()
-                || starts_with(src, "```", *line_range)
-                || starts_with(src, "$$", *line_range)
+                || if let Some(head_line) = head_line {
+                    if head_line != line_range {
+                        starts_with(src, "```", *line_range) || starts_with(src, "$$", *line_range)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
                 || MARK_TO_THEOREM_KIND
                     .iter()
                     .any(|(mark, _)| starts_with(src, mark, *line_range))
