@@ -1,9 +1,15 @@
 use crate::document::*;
 use crate::katex;
+use crate::lsp::state::Cache;
+use crate::source::{
+    range::{BlockRange, InlineRange},
+    Source,
+};
+use log::debug;
 use std::collections::HashMap;
 use std::{env, fs, path::Path};
 
-pub fn print(src: &Vec<Vec<char>>, doc: Vec<BlockElement>) {
+pub fn print(src: &Source, cache: &Cache, document: Document) {
     let bokuteki_config_path_string = env::var("BOKUTEKI_CONFIG_PATH")
         .expect("env variable `$BOKUTEKI_CONFIG_PATH` is not defined.");
     let config_path = Path::new(&bokuteki_config_path_string);
@@ -29,25 +35,29 @@ pub fn print(src: &Vec<Vec<char>>, doc: Vec<BlockElement>) {
 
     let template_string = fs::read_to_string(template_path.join("index.template.html"))
         .expect("failed to read index.template.html");
-
-    let body_string: String = print_block_elements(src, doc, 4, true);
+    debug!("start making body string");
+    let body_string: String = print_block_elements(src, cache, document.0, 4, true);
+    debug!("end making body string");
 
     let html_string = template_string.replace("{body-string}", &body_string);
     let mut html_file =
         fs::File::create(output_path.join("index.html")).expect("faild to create index.html");
     use std::io::Write;
-    write!(html_file, "{}", html_string).expect("failed to write out html content..")
+    write!(html_file, "{}", html_string).expect("failed to write out html content..");
 }
 
 fn print_block_elements(
-    src: &Vec<Vec<char>>,
+    src: &Source,
+    cache: &Cache,
     block_elements: Vec<BlockElement>,
     indent_depth: usize,
     needs_margin: bool,
 ) -> String {
     block_elements
         .into_iter()
-        .map(|block_element| print_block_element(src, block_element, indent_depth, needs_margin))
+        .map(|block_element| {
+            print_block_element(src, cache, block_element, indent_depth, needs_margin)
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -71,7 +81,8 @@ fn print_html_tag(
 }
 
 fn print_block_element(
-    src: &Vec<Vec<char>>,
+    src: &Source,
+    cache: &Cache,
     block_element: BlockElement,
     indent_depth: usize,
     needs_margin: bool,
@@ -82,16 +93,16 @@ fn print_block_element(
         HashMap::new()
     };
     match block_element {
-        BlockElement::Heading { level, content } => {
-            let content = print_inline_elements(src, content, indent_depth + 4);
+        BlockElement::Heading { level, content, .. } => {
+            let content = print_inline_elements(src, cache, content, indent_depth + 4);
             let tag_name = format!("h{}", level);
             print_html_tag(&tag_name, attributes, content, indent_depth)
         }
-        BlockElement::Paragraph { content } => {
-            let content = print_inline_elements(src, content, indent_depth + 4);
+        BlockElement::Paragraph { content, .. } => {
+            let content = print_inline_elements(src, cache, content, indent_depth + 4);
             print_html_tag("p", attributes, content, indent_depth)
         }
-        BlockElement::Code { lines } => {
+        BlockElement::Code { lines, .. } => {
             let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
             let inner = verbatim_block_content(src, &lines);
             let attributes = attributes
@@ -104,7 +115,7 @@ fn print_block_element(
 {inner}</pre>"#
             )
         }
-        BlockElement::Math { lines } => {
+        BlockElement::Math { lines, .. } => {
             let content = verbatim_block_content(src, &lines);
             katex::render(content, true)
         }
@@ -112,28 +123,32 @@ fn print_block_element(
             kind: _kind,
             title,
             content,
+            ..
         } => {
-            let title = print_inline_elements(src, title, 0);
-            let content = print_block_elements(src, content, indent_depth + 4, false);
+            let title = print_inline_elements(src, cache, title, 0);
+            let content = print_block_elements(src, cache, content, indent_depth + 4, false);
             attributes.insert("class", "math-theorem");
             attributes.insert("data-title", &title);
             print_html_tag("div", attributes, content, indent_depth)
         }
-        BlockElement::Proof { content } => {
-            let content = print_block_elements(src, content, indent_depth + 4, false);
+        BlockElement::Proof { content, .. } => {
+            let content = print_block_elements(src, cache, content, indent_depth + 4, false);
             attributes.insert("class", "math-proof");
             print_html_tag("div", attributes, content, indent_depth)
         }
-        BlockElement::Derivation(derivation) => print_derivation(src, derivation),
+        BlockElement::Derivation(derivation) => print_derivation(src, derivation, cache),
         BlockElement::List {
             mark_kind: _mark_kind,
             items,
+            ..
         } => {
             let items = items
                 .into_iter()
                 .map(|item| {
-                    let top_line = print_inline_elements(src, item.top_line, indent_depth + 8);
-                    let blocks = print_block_elements(src, item.blocks, indent_depth + 8, false);
+                    let top_line =
+                        print_inline_elements(src, cache, item.top_line, indent_depth + 8);
+                    let blocks =
+                        print_block_elements(src, cache, item.blocks, indent_depth + 8, false);
                     let content = if blocks.is_empty() {
                         top_line
                     } else {
@@ -146,16 +161,17 @@ fn print_block_element(
 
             print_html_tag("ul", attributes, items, indent_depth)
         }
-        BlockElement::Blockquote { inner } => {
-            let inner = print_block_elements(src, inner, indent_depth + 4, true);
+        BlockElement::Blockquote { inner, .. } => {
+            let inner = print_block_elements(src, cache, inner, indent_depth + 4, true);
             print_html_tag("blockquote", attributes, inner, indent_depth)
         }
+        BlockElement::EmptyLines { .. } => String::new(),
         BlockElement::ParseError => "parse error..".to_string(),
     }
 }
 
-fn print_derivation(src: &Vec<Vec<char>>, derivation: Derivation) -> String {
-    let (katex_src, inner_elements) = print_derivation_impl(src, derivation, vec![]);
+fn print_derivation(src: &Source, derivation: Derivation, cache: &Cache) -> String {
+    let (katex_src, inner_elements) = print_derivation_impl(src, cache, derivation, vec![]);
     let content = katex::render(katex_src, true);
     inner_elements
         .into_iter()
@@ -167,7 +183,8 @@ fn print_derivation(src: &Vec<Vec<char>>, derivation: Derivation) -> String {
 }
 
 fn print_derivation_impl(
-    src: &Vec<Vec<char>>,
+    src: &Source,
+    cache: &Cache,
     derivation: Derivation,
     mut inner_elements: Vec<String>,
 ) -> (String, Vec<String>) {
@@ -180,11 +197,12 @@ fn print_derivation_impl(
             premises,
             conclusion,
             rule_name,
+            ..
         } => {
             let mut premise_katex_srcs = vec![];
             for premise in premises {
                 let (premise_katex_src, inner_elements_) =
-                    print_derivation_impl(src, premise, inner_elements);
+                    print_derivation_impl(src, cache, premise, inner_elements);
                 premise_katex_srcs.push(premise_katex_src);
                 inner_elements = inner_elements_;
             }
@@ -195,7 +213,7 @@ fn print_derivation_impl(
 
             let conclusion_mark = make_fresh_mark(inner_elements.len());
             let conclusion_katex_src = conclusion_mark;
-            inner_elements.push(print_inline_elements(src, conclusion, 0));
+            inner_elements.push(print_inline_elements(src, cache, conclusion, 0));
 
             if rule_name.is_empty() {
                 let katex_src =
@@ -205,14 +223,16 @@ fn print_derivation_impl(
             } else {
                 let rule_name_mark = make_fresh_mark(inner_elements.len());
                 let rule_name_katex_src = rule_name_mark;
-                inner_elements.push(print_inline_elements(src, rule_name, 0));
+                inner_elements.push(print_inline_elements(src, cache, rule_name, 0));
                 let katex_src =
                     format!("\\dfrac{{{premises_katex_src}}}{{{conclusion_katex_src}}} {rule_name_katex_src}");
                 (katex_src, inner_elements)
             }
         }
-        Derivation::Leaf(inline_elements) => {
-            let inner_element = print_inline_elements(src, inline_elements, 0);
+        Derivation::Leaf {
+            inline_elements, ..
+        } => {
+            let inner_element = print_inline_elements(src, cache, inline_elements, 0);
             let katex_src = make_fresh_mark(inner_elements.len());
             inner_elements.push(inner_element);
             (katex_src, inner_elements)
@@ -221,54 +241,51 @@ fn print_derivation_impl(
 }
 
 fn print_inline_elements(
-    src: &Vec<Vec<char>>,
+    src: &Source,
+    cache: &Cache,
     inline_elements: Vec<InlineElement>,
     indent_depth: usize,
 ) -> String {
     let indent: String = std::iter::repeat(" ").take(indent_depth).collect();
     let line = inline_elements
         .into_iter()
-        .map(|inline_element| print_inline_element(src, inline_element))
+        .map(|inline_element| print_inline_element(src, cache, inline_element))
         .collect::<Vec<_>>()
         .join("");
     format!("{indent}{line}")
 }
 
-fn print_inline_element(src: &Vec<Vec<char>>, inline_element: InlineElement) -> String {
+fn print_inline_element(src: &Source, cache: &Cache, inline_element: InlineElement) -> String {
     match inline_element {
-        InlineElement::Text { mut range } => {
+        InlineElement::Text { mut range, .. } => {
             let mut result = String::new();
-            while !range.is_empty() {
-                let c: char = pick_char(src, &range).unwrap();
+            while let Some(c) = range.next(&src) {
                 result.push(c);
-                range.move_to_next_char();
             }
             result
         }
-        InlineElement::Math { mut range } => {
-            let mut result = String::new();
-            while !range.is_empty() {
-                let c: char = pick_char(src, &range).unwrap();
-                result.push(c);
-                range.move_to_next_char();
+        InlineElement::Math { mut range, .. } => {
+            if let Some(content) = cache.get(&range) {
+                content.clone()
+            } else {
+                let mut result = String::new();
+                while let Some(c) = range.next(&src) {
+                    result.push(c);
+                }
+                katex::render(result, false)
             }
-            katex::render(result, false)
         }
-        InlineElement::Code { mut range } => {
+        InlineElement::Code { mut range, .. } => {
             let mut result = String::new();
-            while !range.is_empty() {
-                let c: char = pick_char(src, &range).unwrap();
+            while let Some(c) = range.next(&src) {
                 result.push(c);
-                range.move_to_next_char();
             }
             format!("<code>{}</code>", result)
         }
-        InlineElement::SmallCaps { mut range } => {
+        InlineElement::SmallCaps { mut range, .. } => {
             let mut result = String::new();
-            while !range.is_empty() {
-                let c: char = pick_char(src, &range).unwrap();
+            while let Some(c) = range.next(&src) {
                 result.push(c);
-                range.move_to_next_char();
             }
             format!(r#"<span class="small-caps">{}</span>"#, result)
         }
@@ -276,7 +293,7 @@ fn print_inline_element(src: &Vec<Vec<char>>, inline_element: InlineElement) -> 
     }
 }
 
-fn verbatim_block_content(src: &Vec<Vec<char>>, range: &BlockRange) -> String {
+fn verbatim_block_content(src: &Source, range: &BlockRange) -> String {
     range
         .iter()
         .map(|line_range: &InlineRange| verbatim_inline_content(src, line_range))
@@ -284,20 +301,6 @@ fn verbatim_block_content(src: &Vec<Vec<char>>, range: &BlockRange) -> String {
         .join("\n")
 }
 
-fn verbatim_inline_content(src: &Vec<Vec<char>>, range: &InlineRange) -> String {
-    src[range.line][range.start_column..range.end_column]
-        .into_iter()
-        .collect()
-}
-
-fn pick_char(src: &Vec<Vec<char>>, range: &InlineRange) -> Option<char> {
-    if let Some(line) = src.iter().nth(range.line) {
-        if let Some(c) = line.iter().nth(range.start_column) {
-            Some(*c)
-        } else {
-            None
-        }
-    } else {
-        None
-    }
+fn verbatim_inline_content(src: &Source, range: &InlineRange) -> String {
+    range.to_string(src)
 }

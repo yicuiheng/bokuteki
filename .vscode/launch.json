@@ -20,7 +20,8 @@
                 }
             },
             "args": [
-                "./example-codes/only-inline-math.bok"
+                "compile",
+                "./example-codes/sample.bok"
             ],
             "cwd": "${workspaceFolder}",
             "env": {

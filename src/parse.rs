@@ -1,4 +1,11 @@
-use crate::document::*;
+use crate::{
+    document::*,
+    lsp::state::Cache,
+    source::{
+        range::{BlockRange, InlineRange},
+        Source,
+    },
+};
 use std::collections::VecDeque;
 
 pub type Error = String; // TODO: マシなエラー型をつける
@@ -14,8 +21,19 @@ pub struct ParseResult<V, R> {
 type ParseBlockElementResult = ParseResult<BlockElement, BlockRange>;
 type ParseInlineElementResult = ParseResult<InlineElement, InlineRange>;
 
-pub fn parse_block_elements(
-    src: &Vec<Vec<char>>,
+pub fn parse_document(src: &Source, cache: &mut Cache) -> ParseResult<Document, BlockRange> {
+    let range = src.whole_range();
+    let block_elements_result = parse_block_elements(src, range);
+    ParseResult {
+        value: Document(block_elements_result.value),
+        errors: block_elements_result.errors,
+        warnings: block_elements_result.warnings,
+        rest_range: block_elements_result.rest_range,
+    }
+}
+
+fn parse_block_elements(
+    src: &Source,
     src_range: BlockRange,
 ) -> ParseResult<Vec<BlockElement>, BlockRange> {
     let mut rest_range = src_range;
@@ -23,15 +41,20 @@ pub fn parse_block_elements(
     let mut errors = vec![];
     let mut warnings = vec![];
     loop {
-        // 空行は無視する
+        // 空行ブロック
+        let mut height_on_source = 0;
         loop {
             if let Some(top_line_range) = rest_range.front() {
                 if top_line_range.is_empty() {
                     rest_range.pop_front();
+                    height_on_source += 1;
                 } else {
                     break;
                 }
             } else {
+                if height_on_source != 0 {
+                    block_elements.push(BlockElement::EmptyLines { height_on_source });
+                }
                 return ParseResult {
                     value: block_elements,
                     errors,
@@ -39,6 +62,9 @@ pub fn parse_block_elements(
                     rest_range: rest_range,
                 };
             }
+        }
+        if height_on_source != 0 {
+            block_elements.push(BlockElement::EmptyLines { height_on_source });
         }
 
         // ここでは `rest_range` はブロック要素から始まっているはず
@@ -50,7 +76,7 @@ pub fn parse_block_elements(
     }
 }
 
-fn parse_block_element(src: &Vec<Vec<char>>, rest_range: BlockRange) -> ParseBlockElementResult {
+fn parse_block_element(src: &Source, rest_range: BlockRange) -> ParseBlockElementResult {
     assert!(!rest_range.is_empty());
     let top_line_range = rest_range.front().expect("`rest_range` can not be empty");
     assert!(!top_line_range.is_empty()); // 空行始まりではない
@@ -103,10 +129,7 @@ fn parse_block_element(src: &Vec<Vec<char>>, rest_range: BlockRange) -> ParseBlo
     parse_paragraph(src, rest_range)
 }
 
-fn parse_heading_block_element(
-    src: &Vec<Vec<char>>,
-    rest_range: &BlockRange,
-) -> ParseBlockElementResult {
+fn parse_heading_block_element(src: &Source, rest_range: &BlockRange) -> ParseBlockElementResult {
     let parse_error = ParseBlockElementResult {
         value: BlockElement::ParseError,
         errors: vec![],
@@ -116,10 +139,10 @@ fn parse_heading_block_element(
 
     let mut rest_range = rest_range.clone();
     if let Some(mut line_rest_range) = rest_range.pop_front() {
-        if starts_with(src, "#", line_rest_range) {
+        if line_rest_range.starts_with(src, "#") {
             let mut level = 0;
-            while starts_with(src, "#", line_rest_range) {
-                line_rest_range.move_to_next_char();
+            while line_rest_range.starts_with(src, "#") {
+                assert_eq!(line_rest_range.next(src), Some('#'));
                 level += 1;
             }
 
@@ -145,27 +168,28 @@ fn parse_heading_block_element(
     }
 }
 
-fn parse_code_block_element(
-    src: &Vec<Vec<char>>,
-    rest_range: &BlockRange,
-) -> ParseBlockElementResult {
-    fn check_start_line(src: &Vec<Vec<char>>, line: InlineRange) -> Option<()> {
-        if starts_with(src, "```", line.clone()) {
+fn parse_code_block_element(src: &Source, rest_range: &BlockRange) -> ParseBlockElementResult {
+    fn check_start_line(src: &Source, line: &InlineRange) -> Option<()> {
+        if line.starts_with(src, "```") {
             Some(())
         } else {
             None
         }
     }
-    fn check_end_line(src: &Vec<Vec<char>>, line: InlineRange) -> Option<()> {
-        if match_(src, "```", line.clone()) {
+    fn check_end_line(src: &Source, line: &InlineRange) -> Option<()> {
+        if line.match_(src, "```") {
             Some(())
         } else {
             None
         }
     }
-    fn make_code_block(range: BlockRange, _: (), _: ()) -> BlockElement {
-        BlockElement::Code { lines: range }
+    fn make_code_block(range: BlockRange, height_on_source: usize, _: (), _: ()) -> BlockElement {
+        BlockElement::Code {
+            lines: range,
+            height_on_source,
+        }
     }
+
     parse_surrounded_block_element(
         src,
         rest_range,
@@ -175,27 +199,28 @@ fn parse_code_block_element(
     )
 }
 
-fn parse_math_block_element(
-    src: &Vec<Vec<char>>,
-    rest_range: &BlockRange,
-) -> ParseBlockElementResult {
-    fn check_start_line(src: &Vec<Vec<char>>, line: InlineRange) -> Option<()> {
-        if match_(src, "$$", line.clone()) {
+fn parse_math_block_element(src: &Source, rest_range: &BlockRange) -> ParseBlockElementResult {
+    fn check_start_line(src: &Source, line: &InlineRange) -> Option<()> {
+        if line.match_(src, "$$") {
             Some(())
         } else {
             None
         }
     }
-    fn check_end_line(src: &Vec<Vec<char>>, line: InlineRange) -> Option<()> {
-        if match_(src, "$$", line.clone()) {
+    fn check_end_line(src: &Source, line: &InlineRange) -> Option<()> {
+        if line.match_(src, "$$") {
             Some(())
         } else {
             None
         }
     }
-    fn make_math_block(range: BlockRange, _: (), _: ()) -> BlockElement {
-        BlockElement::Math { lines: range }
+    fn make_math_block(range: BlockRange, height_on_source: usize, _: (), _: ()) -> BlockElement {
+        BlockElement::Math {
+            lines: range,
+            height_on_source,
+        }
     }
+
     parse_surrounded_block_element(
         src,
         rest_range,
@@ -206,11 +231,11 @@ fn parse_math_block_element(
 }
 
 fn parse_surrounded_block_element<T, U>(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     rest_range: &BlockRange,
-    check_start_line: fn(src: &Vec<Vec<char>>, InlineRange) -> Option<T>,
-    check_end_line: fn(src: &Vec<Vec<char>>, InlineRange) -> Option<U>,
-    make_func: fn(BlockRange, T, U) -> BlockElement,
+    check_start_line: fn(src: &Source, &InlineRange) -> Option<T>,
+    check_end_line: fn(src: &Source, &InlineRange) -> Option<U>,
+    make_func: fn(BlockRange, usize, T, U) -> BlockElement,
 ) -> ParseBlockElementResult {
     let mut rest_range = rest_range.clone();
     let parse_error = ParseBlockElementResult {
@@ -221,15 +246,18 @@ fn parse_surrounded_block_element<T, U>(
     };
     let errors = vec![];
     let warnings = vec![];
+    let mut height_on_source = 0;
 
     if let Some(line) = rest_range.pop_front() {
-        if let Some(t) = check_start_line(src, line) {
+        height_on_source += 1;
+        if let Some(t) = check_start_line(src, &line) {
             let mut content_lines = VecDeque::new();
             loop {
                 if let Some(line) = rest_range.pop_front() {
-                    if let Some(u) = check_end_line(src, line) {
+                    height_on_source += 1;
+                    if let Some(u) = check_end_line(src, &line) {
                         return ParseBlockElementResult {
-                            value: make_func(content_lines, t, u),
+                            value: make_func(content_lines, height_on_source, t, u),
                             errors,
                             warnings,
                             rest_range,
@@ -250,7 +278,7 @@ fn parse_surrounded_block_element<T, U>(
 }
 
 fn parse_theorem_block_element(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     mut rest_range: BlockRange,
 ) -> ParseBlockElementResult {
     let parse_error = ParseBlockElementResult {
@@ -262,6 +290,7 @@ fn parse_theorem_block_element(
     let mut errors = vec![];
     let mut warnings = vec![];
 
+    let mut height_on_source = 1;
     let (kind, title) = if let Some(line) = rest_range.pop_front() {
         let mut kind_result = parse_theorem_kind(src, &line);
         errors.append(&mut kind_result.errors);
@@ -279,6 +308,7 @@ fn parse_theorem_block_element(
     };
 
     let inner_range = lift_block_range(src, "  ", rest_range);
+    height_on_source += inner_range.value.len();
     rest_range = inner_range.rest_range;
 
     let mut inner_result = parse_block_elements(src, inner_range.value);
@@ -291,6 +321,7 @@ fn parse_theorem_block_element(
             kind,
             title,
             content: inner_result.value,
+            height_on_source,
         },
         errors,
         warnings,
@@ -333,16 +364,17 @@ const MARK_TO_THEOREM_KIND: [(&'static str, TheoremKind); 26] = [
 ];
 
 fn parse_theorem_kind(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     rest_range: &InlineRange,
 ) -> ParseResult<TheoremKind, InlineRange> {
+    let rest_range = rest_range.clone();
     for (mark, kind) in &MARK_TO_THEOREM_KIND {
-        if starts_with(src, mark, rest_range.clone()) {
+        if rest_range.starts_with(src, mark) {
             return ParseResult {
                 value: *kind,
                 errors: vec![],
                 warnings: vec![],
-                rest_range: rest_range.consume(mark.len()),
+                rest_range: rest_range.consume(src, mark.len()),
             };
         }
     }
@@ -355,10 +387,7 @@ fn parse_theorem_kind(
     }
 }
 
-fn parse_proof_block_element(
-    src: &Vec<Vec<char>>,
-    mut rest_range: BlockRange,
-) -> ParseBlockElementResult {
+fn parse_proof_block_element(src: &Source, mut rest_range: BlockRange) -> ParseBlockElementResult {
     let parse_error = ParseBlockElementResult {
         value: BlockElement::ParseError,
         errors: vec![],
@@ -368,8 +397,9 @@ fn parse_proof_block_element(
     let mut errors = vec![];
     let mut warnings = vec![];
 
+    let mut height_on_source = 1;
     if let Some(line) = rest_range.pop_front() {
-        if !match_(src, "Proof.", line) && !match_(src, "proof.", line) {
+        if !line.match_(src, "Proof.") && !line.match_(src, "proof.") {
             return parse_error;
         }
     } else {
@@ -380,15 +410,23 @@ fn parse_proof_block_element(
     errors.append(&mut inner_range.errors);
     warnings.append(&mut inner_range.warnings);
     rest_range = inner_range.rest_range;
+    height_on_source += inner_range.value.len();
 
     let mut inner_result = parse_block_elements(src, inner_range.value);
     assert!(inner_result.rest_range.is_empty());
     errors.append(&mut inner_result.errors);
     warnings.append(&mut inner_result.warnings);
+    height_on_source = inner_result
+        .value
+        .iter()
+        .fold(height_on_source, |acc, inner_block_element| {
+            acc + inner_block_element.height_on_source()
+        });
 
     ParseBlockElementResult {
         value: BlockElement::Proof {
             content: inner_result.value,
+            height_on_source,
         },
         errors,
         warnings,
@@ -397,7 +435,7 @@ fn parse_proof_block_element(
 }
 
 fn parse_derivation_block_element(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     mut rest_range: BlockRange,
 ) -> ParseResult<Option<Derivation>, BlockRange> {
     let parse_error = ParseResult {
@@ -410,6 +448,7 @@ fn parse_derivation_block_element(
     let mut warnings = vec![];
 
     let mut premises_range_result = lift_block_range(src, "  ", rest_range);
+    let mut height_on_source = premises_range_result.value.len();
     errors.append(&mut premises_range_result.errors);
     warnings.append(&mut premises_range_result.warnings);
     let mut premises: Vec<Derivation> = vec![];
@@ -422,17 +461,23 @@ fn parse_derivation_block_element(
             premises.push(premise);
             premises_rest_range = premise_result.rest_range;
         } else if let Some(line_range) = premises_rest_range.pop_front() {
-            let inline_elements = parse_inline_elements(src, line_range);
-            premises.push(Derivation::Leaf(inline_elements.value));
+            let height_on_source = 1;
+            let mut inline_elements_result = parse_inline_elements(src, line_range);
+            errors.append(&mut inline_elements_result.errors);
+            warnings.append(&mut inline_elements_result.warnings);
+            premises.push(Derivation::Leaf {
+                inline_elements: inline_elements_result.value,
+                height_on_source,
+            });
         }
     }
     rest_range = premises_range_result.rest_range;
 
     let mut rule_name_result = if let Some(mut line_range) = rest_range.pop_front() {
         let mut count = 0;
-        while check_at(src, '-', &line_range) {
+        while line_range.starts_with(src, "-") {
             count += 1;
-            line_range.move_to_next_char();
+            line_range.next(src);
         }
         if count >= 3 {
             parse_inline_elements(src, line_range)
@@ -442,11 +487,13 @@ fn parse_derivation_block_element(
     } else {
         return parse_error;
     };
+    height_on_source += 1;
     errors.append(&mut rule_name_result.errors);
     warnings.append(&mut rule_name_result.warnings);
     let rule_name = rule_name_result.value;
 
     let mut conclusion_range_result = lift_block_range(src, "  ", rest_range);
+    height_on_source += conclusion_range_result.value.len();
     errors.append(&mut conclusion_range_result.errors);
     warnings.append(&mut conclusion_range_result.warnings);
     rest_range = conclusion_range_result.rest_range;
@@ -463,6 +510,7 @@ fn parse_derivation_block_element(
             premises,
             conclusion,
             rule_name,
+            height_on_source,
         }),
         errors,
         warnings,
@@ -470,26 +518,26 @@ fn parse_derivation_block_element(
     }
 }
 
-fn parse_list_block_element(
-    src: &Vec<Vec<char>>,
-    mut rest_range: BlockRange,
-) -> ParseBlockElementResult {
+fn parse_list_block_element(src: &Source, mut rest_range: BlockRange) -> ParseBlockElementResult {
     let mut errors = vec![];
     let mut warnings = vec![];
 
     let mut items = vec![];
+    let mut height_on_source = 0;
     while let Some(line) = rest_range.pop_front() {
-        if !starts_with(src, "- ", line) {
+        height_on_source += 1;
+        if !line.starts_with(src, "- ") {
             rest_range.push_front(line);
             break;
         }
 
-        let mut top_line_result = parse_inline_elements(src, line.consume(2));
+        let mut top_line_result = parse_inline_elements(src, line.consume(src, 2));
         errors.append(&mut top_line_result.errors);
         warnings.append(&mut top_line_result.warnings);
         let top_line = top_line_result.value;
 
         let mut inner_range_result = lift_block_range(src, "  ", rest_range);
+        height_on_source += inner_range_result.value.len();
         let inner_range = inner_range_result.value;
         errors.append(&mut inner_range_result.errors);
         warnings.append(&mut inner_range_result.warnings);
@@ -510,6 +558,7 @@ fn parse_list_block_element(
             BlockElement::List {
                 mark_kind: ListMarkKind::Bullet,
                 items,
+                height_on_source,
             }
         },
         errors,
@@ -518,10 +567,7 @@ fn parse_list_block_element(
     }
 }
 
-fn parse_blockquote_element(
-    src: &Vec<Vec<char>>,
-    mut rest_range: BlockRange,
-) -> ParseBlockElementResult {
+fn parse_blockquote_element(src: &Source, mut rest_range: BlockRange) -> ParseBlockElementResult {
     let parse_error = ParseBlockElementResult {
         value: BlockElement::ParseError,
         errors: vec![],
@@ -532,13 +578,13 @@ fn parse_blockquote_element(
     let mut warnings = vec![];
 
     if let Some(line) = rest_range.pop_front() {
-        if starts_with(src, "> ", line) {
+        if line.starts_with(src, "> ") {
             let mut inner_range = BlockRange::new();
-            inner_range.push_back(line.consume(2));
+            inner_range.push_back(line.consume(src, 2));
             loop {
                 if let Some(line) = rest_range.pop_front() {
-                    if starts_with(src, "> ", line) {
-                        inner_range.push_back(line.consume(2));
+                    if line.starts_with(src, "> ") {
+                        inner_range.push_back(line.consume(src, 2));
                     } else {
                         rest_range.push_front(line);
                         break;
@@ -547,6 +593,7 @@ fn parse_blockquote_element(
                     break;
                 }
             }
+            let height_on_source = inner_range.len();
 
             let mut inner_result = parse_block_elements(src, inner_range);
             let inner = inner_result.value;
@@ -555,7 +602,10 @@ fn parse_blockquote_element(
             warnings.append(&mut inner_result.warnings);
 
             ParseBlockElementResult {
-                value: BlockElement::Blockquote { inner },
+                value: BlockElement::Blockquote {
+                    inner,
+                    height_on_source,
+                },
                 errors,
                 warnings,
                 rest_range,
@@ -568,16 +618,19 @@ fn parse_blockquote_element(
     }
 }
 
-fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlockElementResult {
+fn parse_paragraph(src: &Source, mut rest_range: BlockRange) -> ParseBlockElementResult {
     let mut inline_elements = vec![];
     let mut errors = vec![];
     let mut warnings = vec![];
 
+    let mut height_on_source = 0;
     let head_line = rest_range.front().cloned();
+    height_on_source += 1;
 
     // ソース終端もしくは別のブロック要素の始まりまで Inline 要素をパースする
     while !is_paragraph_end(src, &rest_range, &head_line) {
         let rest_line_range = rest_range.pop_front().expect("can not be empty");
+        height_on_source += 1;
         let mut inline_elements_result = parse_inline_elements(src, rest_line_range);
         assert!(inline_elements_result.rest_range.is_empty());
         errors.append(&mut inline_elements_result.errors);
@@ -598,7 +651,7 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
     //   - 引用ブロックの始まり
     // ただしコードブロックの終端マーク ("```") もしくは 数式ブロックの終端マーク ("$$") が1行目に出現した場合は、それは段落の終わりではない。
     fn is_paragraph_end(
-        src: &Vec<Vec<char>>,
+        src: &Source,
         rest_range: &BlockRange,
         head_line: &Option<InlineRange>,
     ) -> bool {
@@ -609,11 +662,11 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
             return true;
         }
         if let Some(line_range) = rest_range.front() {
-            starts_with(src, "#", *line_range)
+            line_range.starts_with(src, "#")
                 || line_range.is_empty()
                 || if let Some(head_line) = head_line {
                     if head_line != line_range {
-                        starts_with(src, "```", *line_range) || starts_with(src, "$$", *line_range)
+                        line_range.starts_with(src, "```") || line_range.starts_with(src, "$$")
                     } else {
                         false
                     }
@@ -622,11 +675,11 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
                 }
                 || MARK_TO_THEOREM_KIND
                     .iter()
-                    .any(|(mark, _)| starts_with(src, mark, *line_range))
-                || starts_with(src, "Proof.", *line_range)
-                || starts_with(src, "proof.", *line_range)
-                || starts_with(src, "- ", *line_range)
-                || starts_with(src, "> ", *line_range)
+                    .any(|(mark, _)| line_range.starts_with(src, mark))
+                || line_range.starts_with(src, "Proof.")
+                || line_range.starts_with(src, "proof.")
+                || line_range.starts_with(src, "- ")
+                || line_range.starts_with(src, "> ")
         } else {
             true
         }
@@ -635,6 +688,7 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
     ParseBlockElementResult {
         value: BlockElement::Paragraph {
             content: inline_elements,
+            height_on_source,
         },
         errors,
         warnings,
@@ -643,7 +697,7 @@ fn parse_paragraph(src: &Vec<Vec<char>>, mut rest_range: BlockRange) -> ParseBlo
 }
 
 fn lift_block_range(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     prefix: &str,
     range: BlockRange,
 ) -> ParseResult<BlockRange, BlockRange> {
@@ -651,8 +705,8 @@ fn lift_block_range(
     let mut lifted_range = BlockRange::new();
     loop {
         if let Some(line) = rest_range.pop_front() {
-            if starts_with(src, prefix, line) {
-                lifted_range.push_back(line.consume(prefix.len()));
+            if line.starts_with(src, prefix) {
+                lifted_range.push_back(line.consume(src, prefix.len()));
             } else {
                 rest_range.push_front(line);
                 break;
@@ -670,7 +724,7 @@ fn lift_block_range(
 }
 
 fn parse_inline_elements(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     mut rest_range: InlineRange,
 ) -> ParseResult<Vec<InlineElement>, InlineRange> {
     let mut inline_elements = vec![];
@@ -691,10 +745,7 @@ fn parse_inline_elements(
     }
 }
 
-fn parse_inline_element(
-    src: &Vec<Vec<char>>,
-    mut rest_range: InlineRange,
-) -> ParseInlineElementResult {
+fn parse_inline_element(src: &Source, mut rest_range: InlineRange) -> ParseInlineElementResult {
     let result = parse_inline_math_element(src, &rest_range);
     if !result.value.is_parse_error() {
         return result;
@@ -710,7 +761,8 @@ fn parse_inline_element(
         return result;
     }
 
-    let start_column = rest_range.start_column;
+    let mut length = 0;
+    let start_cursor = rest_range.cursor.clone();
     let errors = vec![];
     let warnings = vec![];
     while !rest_range.is_empty() {
@@ -725,29 +777,30 @@ fn parse_inline_element(
                 .is_parse_error()
         {
             let inline_range = InlineRange {
-                line: rest_range.line,
-                start_column,
-                end_column: rest_range.start_column,
+                cursor: start_cursor,
+                length,
             };
             return ParseInlineElementResult {
                 value: InlineElement::Text {
                     range: inline_range,
+                    width_on_source: length,
                 },
                 errors,
                 warnings,
                 rest_range,
             };
         }
-        rest_range.move_to_next_char();
+        rest_range.next(src);
+        length += 1;
     }
 
     ParseInlineElementResult {
         value: InlineElement::Text {
             range: InlineRange {
-                line: rest_range.line,
-                start_column,
-                end_column: rest_range.start_column,
+                cursor: start_cursor,
+                length,
             },
+            width_on_source: length,
         },
         errors,
         warnings,
@@ -755,147 +808,85 @@ fn parse_inline_element(
     }
 }
 
-fn parse_inline_math_element(
-    src: &Vec<Vec<char>>,
-    rest_range: &InlineRange,
-) -> ParseInlineElementResult {
-    let mut rest_range = *rest_range;
-    let errors = vec![];
-    let warnings = vec![];
-    if let Some('$') = pick_char(src, &rest_range) {
-        rest_range.move_to_next_char();
-        let inline_math_start_column = rest_range.start_column;
-        loop {
-            match pick_char(src, &rest_range) {
-                Some('$') => {
-                    let inline_math_range = InlineRange {
-                        line: rest_range.line,
-                        start_column: inline_math_start_column,
-                        end_column: rest_range.start_column,
-                    };
-                    rest_range.move_to_next_char();
-                    return ParseInlineElementResult {
-                        value: InlineElement::Math {
-                            range: inline_math_range,
-                        },
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
-                Some(_) => {
-                    rest_range.move_to_next_char();
-                }
-                None => {
-                    return ParseInlineElementResult {
-                        value: InlineElement::ParseError,
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
-            }
-        }
-    } else {
-        ParseInlineElementResult {
-            value: InlineElement::ParseError,
-            errors,
-            warnings,
-            rest_range,
-        }
-    }
+fn parse_inline_math_element(src: &Source, rest_range: &InlineRange) -> ParseInlineElementResult {
+    parse_surrounded_inline_element(
+        src,
+        "$",
+        |content_range, width_on_source| InlineElement::Math {
+            range: content_range,
+            width_on_source,
+        },
+        rest_range,
+    )
 }
 
-fn parse_inline_code_element(
-    src: &Vec<Vec<char>>,
-    rest_range: &InlineRange,
-) -> ParseInlineElementResult {
-    let mut rest_range = *rest_range;
-    let errors = vec![];
-    let warnings = vec![];
-    if let Some('`') = pick_char(src, &rest_range) {
-        rest_range.move_to_next_char();
-        let inline_code_start_column = rest_range.start_column;
-        loop {
-            match pick_char(src, &rest_range) {
-                Some('`') => {
-                    let inline_code_range = InlineRange {
-                        line: rest_range.line,
-                        start_column: inline_code_start_column,
-                        end_column: rest_range.start_column,
-                    };
-                    rest_range.move_to_next_char();
-                    return ParseInlineElementResult {
-                        value: InlineElement::Code {
-                            range: inline_code_range,
-                        },
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
-                Some(_) => {
-                    rest_range.move_to_next_char();
-                }
-                None => {
-                    return ParseInlineElementResult {
-                        value: InlineElement::ParseError,
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
-            }
-        }
-    } else {
-        ParseInlineElementResult {
-            value: InlineElement::ParseError,
-            errors,
-            warnings,
-            rest_range,
-        }
-    }
+fn parse_inline_code_element(src: &Source, rest_range: &InlineRange) -> ParseInlineElementResult {
+    parse_surrounded_inline_element(
+        src,
+        "`",
+        |content_range, width_on_source| InlineElement::Code {
+            range: content_range,
+            width_on_source,
+        },
+        rest_range,
+    )
 }
 
 fn parse_inline_small_caps_element(
-    src: &Vec<Vec<char>>,
+    src: &Source,
     rest_range: &InlineRange,
 ) -> ParseInlineElementResult {
-    let mut rest_range = *rest_range;
+    parse_surrounded_inline_element(
+        src,
+        "%",
+        |content_range, width_on_source| InlineElement::SmallCaps {
+            range: content_range,
+            width_on_source,
+        },
+        rest_range,
+    )
+}
+
+fn parse_surrounded_inline_element(
+    src: &Source,
+    mark: &str,
+    make_inline_element: fn(InlineRange, usize) -> InlineElement,
+    rest_range: &InlineRange,
+) -> ParseInlineElementResult {
+    let mut rest_range = rest_range.clone();
     let errors = vec![];
     let warnings = vec![];
-    if let Some('%') = pick_char(src, &rest_range) {
-        rest_range.move_to_next_char();
-        let inline_start_column = rest_range.start_column;
+    let mut width_on_source = 0;
+    if rest_range.starts_with(src, mark) {
+        rest_range = rest_range.consume(src, mark.len());
+        let content_start_cursor = rest_range.cursor.clone();
+        width_on_source += mark.len();
         loop {
-            match pick_char(src, &rest_range) {
-                Some('%') => {
-                    let inline_range = InlineRange {
-                        line: rest_range.line,
-                        start_column: inline_start_column,
-                        end_column: rest_range.start_column,
-                    };
-                    rest_range.move_to_next_char();
-                    return ParseInlineElementResult {
-                        value: InlineElement::SmallCaps {
-                            range: inline_range,
-                        },
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
-                Some(_) => {
-                    rest_range.move_to_next_char();
-                }
-                None => {
-                    return ParseInlineElementResult {
-                        value: InlineElement::ParseError,
-                        errors,
-                        warnings,
-                        rest_range,
-                    };
-                }
+            if rest_range.is_empty() {
+                return ParseInlineElementResult {
+                    value: InlineElement::ParseError,
+                    errors,
+                    warnings,
+                    rest_range,
+                };
+            }
+            if rest_range.starts_with(src, mark) {
+                rest_range = rest_range.consume(src, mark.len());
+                width_on_source += mark.len();
+                let inline_content_range = InlineRange {
+                    cursor: content_start_cursor,
+                    length: width_on_source - mark.len() * 2,
+                };
+                let inline_element = make_inline_element(inline_content_range, width_on_source);
+                return ParseInlineElementResult {
+                    value: inline_element,
+                    errors,
+                    warnings,
+                    rest_range,
+                };
+            } else {
+                rest_range.next(src);
+                width_on_source += 1;
             }
         }
     } else {
@@ -906,39 +897,4 @@ fn parse_inline_small_caps_element(
             rest_range,
         }
     }
-}
-
-fn pick_char(src: &Vec<Vec<char>>, range: &InlineRange) -> Option<char> {
-    if let Some(line) = src.iter().nth(range.line) {
-        if let Some(c) = line.iter().nth(range.start_column) {
-            Some(*c)
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-fn check_at(src: &Vec<Vec<char>>, expected: char, range: &InlineRange) -> bool {
-    if let Some(actual) = pick_char(src, range) {
-        expected == actual
-    } else {
-        false
-    }
-}
-
-fn starts_with(src: &Vec<Vec<char>>, expected: &str, mut range: InlineRange) -> bool {
-    expected.chars().all(|c| {
-        let res = check_at(src, c, &range);
-        if range.is_empty() {
-            return false;
-        }
-        range.move_to_next_char();
-        res
-    })
-}
-
-fn match_(src: &Vec<Vec<char>>, expected: &str, range: InlineRange) -> bool {
-    expected.len() == range.end_column - range.start_column && starts_with(src, expected, range)
 }
