@@ -904,6 +904,11 @@ fn parse_inline_element(
     src: &Vec<Vec<char>>,
     mut rest_range: InlineRange,
 ) -> ParseInlineElementResult {
+    let result = parse_inline_link_element(src, &rest_range);
+    if !result.value.is_parse_error() {
+        return result;
+    }
+
     let result = parse_inline_math_element(src, &rest_range);
     if !result.value.is_parse_error() {
         return result;
@@ -923,9 +928,12 @@ fn parse_inline_element(
     let errors = vec![];
     let warnings = vec![];
     while !rest_range.is_empty() {
-        if !parse_inline_math_element(src, &rest_range)
+        if !parse_inline_link_element(src, &rest_range)
             .value
             .is_parse_error()
+            || !parse_inline_math_element(src, &rest_range)
+                .value
+                .is_parse_error()
             || !parse_inline_code_element(src, &rest_range)
                 .value
                 .is_parse_error()
@@ -958,6 +966,112 @@ fn parse_inline_element(
                 end_column: rest_range.start_column,
             },
         },
+        errors,
+        warnings,
+        rest_range,
+    }
+}
+
+fn parse_inline_link_element(
+    src: &Vec<Vec<char>>,
+    rest_range: &InlineRange,
+) -> ParseInlineElementResult {
+    let mut rest_range = rest_range.clone();
+    let mut errors = vec![];
+    let mut warnings = vec![];
+    if let Some('[') = pick_char(src, &rest_range) {
+        rest_range.move_to_next_char();
+    } else {
+        return ParseInlineElementResult {
+            value: InlineElement::ParseError,
+            errors,
+            warnings,
+            rest_range,
+        };
+    }
+
+    let text_start_column = rest_range.start_column;
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(']') => {
+                break;
+            }
+            Some(_) => {
+                rest_range.move_to_next_char();
+            }
+            None => {
+                return ParseInlineElementResult {
+                    value: InlineElement::ParseError,
+                    errors,
+                    warnings,
+                    rest_range,
+                }
+            }
+        }
+    }
+    let text_end_column = rest_range.start_column;
+    rest_range.move_to_next_char();
+    let mut text_result = parse_inline_elements(
+        src,
+        InlineRange {
+            line: rest_range.line,
+            start_column: text_start_column,
+            end_column: text_end_column,
+        },
+    );
+    errors.append(&mut text_result.errors);
+    warnings.append(&mut text_result.warnings);
+    if !text_result.rest_range.is_empty() {
+        return ParseInlineElementResult {
+            value: InlineElement::ParseError,
+            errors,
+            warnings,
+            rest_range,
+        };
+    }
+    let text = text_result.value;
+
+    if let Some('(') = pick_char(src, &rest_range) {
+        rest_range.move_to_next_char();
+    } else {
+        return ParseInlineElementResult {
+            value: InlineElement::ParseError,
+            errors,
+            warnings,
+            rest_range,
+        };
+    }
+
+    let url_start_column = rest_range.start_column;
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(')') => {
+                break;
+            }
+            Some(_) => {
+                rest_range.move_to_next_char();
+            }
+            None => {
+                return ParseInlineElementResult {
+                    value: InlineElement::ParseError,
+                    errors,
+                    warnings,
+                    rest_range,
+                }
+            }
+        }
+    }
+    let url_end_column = rest_range.start_column;
+    rest_range.move_to_next_char();
+
+    let url_range = InlineRange {
+        line: rest_range.line,
+        start_column: url_start_column,
+        end_column: url_end_column,
+    };
+
+    ParseInlineElementResult {
+        value: InlineElement::Link { text, url_range },
         errors,
         warnings,
         rest_range,

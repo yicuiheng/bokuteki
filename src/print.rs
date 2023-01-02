@@ -292,6 +292,23 @@ fn print_inline_element(src: &Vec<Vec<char>>, inline_element: InlineElement) -> 
             }
             result
         }
+        InlineElement::Link {
+            text,
+            mut url_range,
+        } => {
+            let text = text
+                .into_iter()
+                .map(|inline_element| print_inline_element(src, inline_element))
+                .collect::<Vec<_>>()
+                .join("");
+            let mut url = String::new();
+            while !url_range.is_empty() {
+                let c = pick_char(src, &url_range).unwrap();
+                url.push(c);
+                url_range.move_to_next_char();
+            }
+            format!("<a href=\"{}\">{}</a>", url, text)
+        }
         InlineElement::Math { mut range } => {
             let mut result = String::new();
             while !range.is_empty() {

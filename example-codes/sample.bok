@@ -9,7 +9,7 @@ Markdown を基にしているが yicuiheng が使わない機能は実装せず
 - 強調/斜体/small-caps など (partially implemented)
 - (順序なし|順序つき) リスト
 - 引用
-- リンク (not implemented)
+- リンク
 - チェックボックス (not implemented)
 - 数式環境 (定理、補題、定義、証明)
 - 推論規則、導出木 (not implemented)
@@ -75,7 +75,7 @@ $ bokuteki hoge.bok
 
 ### リンク
 
-未実装
+Markdown 形式でリンクをはれます。[こんな](https://example.com) 風にね。
 
 ### チェックボックス
 

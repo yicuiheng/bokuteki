@@ -76,10 +76,22 @@ pub struct ListItem {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InlineElement {
-    Text { range: InlineRange },
-    Code { range: InlineRange },
-    Math { range: InlineRange },
-    SmallCaps { range: InlineRange },
+    Text {
+        range: InlineRange,
+    },
+    Link {
+        text: Vec<InlineElement>,
+        url_range: InlineRange,
+    },
+    Code {
+        range: InlineRange,
+    },
+    Math {
+        range: InlineRange,
+    },
+    SmallCaps {
+        range: InlineRange,
+    },
     ParseError,
 }
 
