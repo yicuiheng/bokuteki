@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn build(src_path: PathBuf) {
-    let printer = Printer::setup();
+pub fn build(src_path: PathBuf, output_path: PathBuf) {
+    let printer = Printer::setup(output_path);
 
     let mut q = VecDeque::new();
     let root_path = src_path.parent().unwrap().to_path_buf();

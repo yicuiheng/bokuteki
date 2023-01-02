@@ -16,7 +16,11 @@ struct AppArgs {
 
 #[derive(Subcommand)]
 enum Action {
-    Build { filepath: String },
+    Build {
+        filepath: String,
+        #[clap(short = 'o', long = "output")]
+        output_path: Option<String>,
+    },
     Lsp,
 }
 
@@ -25,9 +29,15 @@ async fn main() {
     init();
 
     match AppArgs::parse().action {
-        Action::Build { filepath } => {
+        Action::Build {
+            filepath,
+            output_path,
+        } => {
             use std::path::PathBuf;
-            build::build(PathBuf::from(filepath));
+            build::build(
+                PathBuf::from(filepath),
+                output_path.map_or_else(|| PathBuf::from("./output"), |str| PathBuf::from(str)),
+            );
         }
         Action::Lsp => lsp::run().await,
     }

@@ -10,13 +10,12 @@ pub struct Printer {
 }
 
 impl Printer {
-    pub fn setup() -> Printer {
+    pub fn setup(output_path: PathBuf) -> Printer {
         // 環境変数から設定パスを取得
         let bokuteki_config_path_string = std::env::var("BOKUTEKI_CONFIG_PATH")
             .expect("env variable `$BOKUTEKI_CONFIG_PATH` is not defined.");
         let config_path = PathBuf::from(&bokuteki_config_path_string);
         let template_path = config_path.join("template");
-        let output_path = PathBuf::from("./output");
 
         // 出力ディレクトリをクリーン
         if output_path.exists() {
