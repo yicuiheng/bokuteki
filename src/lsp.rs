@@ -1,4 +1,5 @@
-use crate::compile;
+mod check_document;
+
 use log::{info, warn};
 use lsp_server::{self, Connection, Message};
 use lsp_types::{
@@ -84,7 +85,7 @@ fn handle_did_open_text_document_notification(
     did_open_text_document: <DidOpenTextDocument as LspTypesNotification>::Params,
 ) {
     let src = did_open_text_document.text_document.text;
-    let (errors, warnings) = compile::compile_src(src);
+    let (errors, warnings) = check_document::check_bok_content(src);
     for error in errors {
         warn!("parse error: {}", error);
     }
@@ -102,7 +103,7 @@ fn handle_did_change_text_document_notification(
         .nth(0)
         .unwrap()
         .text;
-    let (errors, warnings) = compile::compile_src(src);
+    let (errors, warnings) = check_document::check_bok_content(src);
     for error in errors {
         warn!("parse error: {}", error);
     }

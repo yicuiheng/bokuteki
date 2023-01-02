@@ -1,4 +1,11 @@
 use std::collections::VecDeque;
+use std::path::PathBuf;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Document {
+    pub block_elements: Vec<BlockElement>,
+    pub imports: Vec<PathBuf>,
+}
 
 // NOTE: 新しく BlockElement の種類を追加する場合は `parse::parse_paragraph` 関数内の `is_paragraph_end` 関数を修正すること
 #[derive(Debug, PartialEq, Eq)]

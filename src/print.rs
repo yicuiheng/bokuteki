@@ -1,42 +1,89 @@
 use crate::document::*;
 use crate::katex;
 use std::collections::HashMap;
-use std::{env, fs, path::Path};
+use std::fs;
+use std::path::{Path, PathBuf};
 
-pub fn print(src: &Vec<Vec<char>>, doc: Vec<BlockElement>) {
-    let bokuteki_config_path_string = env::var("BOKUTEKI_CONFIG_PATH")
-        .expect("env variable `$BOKUTEKI_CONFIG_PATH` is not defined.");
-    let config_path = Path::new(&bokuteki_config_path_string);
-    let template_path = config_path.join("template");
-    let output_path = Path::new("./output");
-    if output_path.exists() {
-        fs::remove_dir_all(output_path).expect("failed to clean output directory..");
+pub struct Printer {
+    template_path: PathBuf,
+    output_path: PathBuf,
+}
+
+impl Printer {
+    pub fn setup() -> Printer {
+        // 環境変数から設定パスを取得
+        let bokuteki_config_path_string = std::env::var("BOKUTEKI_CONFIG_PATH")
+            .expect("env variable `$BOKUTEKI_CONFIG_PATH` is not defined.");
+        let config_path = PathBuf::from(&bokuteki_config_path_string);
+        let template_path = config_path.join("template");
+        let output_path = PathBuf::from("./output");
+
+        // 出力ディレクトリをクリーン
+        if output_path.exists() {
+            fs::remove_dir_all(&output_path).expect("failed to clean output directory..");
+        }
+        fs::create_dir(&output_path).expect("failed to create output directory..");
+
+        assert!(template_path.is_dir());
+        assert!(output_path.is_dir());
+
+        // 共通ファイルを配置
+        fs::copy(
+            template_path.join("bokuteki.css"),
+            output_path.join("bokuteki.css"),
+        )
+        .expect("failed to copy bokuteki.css");
+        fs::copy(
+            template_path.join("bokuteki.js"),
+            output_path.join("bokuteki.js"),
+        )
+        .expect("failed to copy bokuteki.js");
+
+        Printer {
+            template_path,
+            output_path,
+        }
     }
-    fs::create_dir(output_path).expect("failed to create output directory..");
-    assert!(template_path.is_dir());
-    assert!(output_path.is_dir());
 
-    fs::copy(
-        template_path.join("bokuteki.css"),
-        output_path.join("bokuteki.css"),
-    )
-    .expect("failed to copy bokuteki.css");
-    fs::copy(
-        template_path.join("bokuteki.js"),
-        output_path.join("bokuteki.js"),
-    )
-    .expect("failed to copy bokuteki.js");
+    pub fn print(&self, src: &Vec<Vec<char>>, src_path: &Path, block_elements: Vec<BlockElement>) {
+        // 出力する内容を構築
+        let template_content = fs::read_to_string(self.template_path.join("template.html"))
+            .expect("failed to read template.html");
+        let relative_to_root = calc_relative_to_root(src_path);
+        let body_content: String = print_block_elements(src, block_elements, 4, true);
+        let css_path = relative_to_root.join("bokuteki.css");
+        let js_path = relative_to_root.join("bokuteki.js");
+        let html_content = template_content
+            .replace("{body-string}", &body_content)
+            .replace("{bokuteki-css-path}", &css_path.display().to_string())
+            .replace("{bokuteki-js-path}", &js_path.display().to_string());
 
-    let template_string = fs::read_to_string(template_path.join("index.template.html"))
-        .expect("failed to read index.template.html");
+        // 出力する先を構築
+        let mut html_path = self.output_path.join(src_path);
+        html_path.set_extension("html");
+        fs::create_dir_all(html_path.parent().unwrap()).unwrap();
 
-    let body_string: String = print_block_elements(src, doc, 4, true);
+        // 出力
+        use std::io::Write;
+        let mut html_file = fs::File::create(html_path).expect("faild to create html file");
+        html_file
+            .write_all(html_content.as_bytes())
+            .expect("failed to write out html content..");
+    }
+}
 
-    let html_string = template_string.replace("{body-string}", &body_string);
-    let mut html_file =
-        fs::File::create(output_path.join("index.html")).expect("faild to create index.html");
-    use std::io::Write;
-    write!(html_file, "{}", html_string).expect("failed to write out html content..")
+// import に指定されたファイルパスからプロジェクトルートへの相対パスを得る
+// e.g., "foo/bar/baz.bok" から "../../" を得る
+fn calc_relative_to_root(filepath: &Path) -> PathBuf {
+    let depth = filepath.components().collect::<Vec<_>>().len() - 1;
+    if depth == 0 {
+        return PathBuf::from("./");
+    }
+    let mut result = PathBuf::new();
+    for _ in 0..depth {
+        result.push("..");
+    }
+    result
 }
 
 fn print_block_elements(

@@ -1,5 +1,6 @@
 use crate::document::*;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 
 pub type Error = String; // TODO: マシなエラー型をつける
 pub type Warning = String; // TODO: マシな警告型をつける
@@ -13,6 +14,214 @@ pub struct ParseResult<V, R> {
 
 type ParseBlockElementResult = ParseResult<BlockElement, BlockRange>;
 type ParseInlineElementResult = ParseResult<InlineElement, InlineRange>;
+
+pub fn parse_document(
+    src: &Vec<Vec<char>>,
+    src_range: BlockRange,
+) -> ParseResult<Document, BlockRange> {
+    let mut rest_range = src_range;
+    let mut imports = vec![];
+    let mut errors = vec![];
+    let mut warnings = vec![];
+
+    // 空行は無視する
+    loop {
+        if let Some(top_line_range) = rest_range.front() {
+            if starts_with(src, IMPORT_KEYWORD, top_line_range.clone()) {
+                let mut import_result = parse_import(src, top_line_range.clone());
+                imports.push(import_result.value);
+                errors.append(&mut import_result.errors);
+                warnings.append(&mut import_result.warnings);
+                rest_range.pop_front();
+            } else {
+                break;
+            }
+        } else {
+            return ParseResult {
+                value: Document {
+                    block_elements: vec![],
+                    imports,
+                },
+                errors,
+                warnings,
+                rest_range,
+            };
+        }
+    }
+
+    let mut block_elements_result = parse_block_elements(src, rest_range);
+    errors.append(&mut block_elements_result.errors);
+    warnings.append(&mut block_elements_result.warnings);
+    let rest_range = block_elements_result.rest_range;
+    ParseResult {
+        value: Document {
+            block_elements: block_elements_result.value,
+            imports,
+        },
+        errors,
+        warnings,
+        rest_range,
+    }
+}
+
+const IMPORT_KEYWORD: &str = "import";
+fn parse_import(
+    src: &Vec<Vec<char>>,
+    inline_range: InlineRange,
+) -> ParseResult<PathBuf, InlineRange> {
+    assert!(starts_with(src, IMPORT_KEYWORD, inline_range));
+    let mut path = PathBuf::new();
+    let mut rest_range = inline_range.consume(IMPORT_KEYWORD.len());
+
+    // シングルクォートが来るまで空白を読み飛ばす
+    // シングルクォートや空白以外が来たり終端が来たらエラーにする
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(c) if c.is_ascii_whitespace() => {
+                rest_range.move_to_next_char();
+            }
+            Some('\'') => {
+                rest_range.move_to_next_char();
+                break;
+            }
+            Some(c) => {
+                return ParseResult {
+                    value: path,
+                    errors: vec![format!(
+                        "at {}:{}: expected single quote ('), but actual is '{}'.",
+                        rest_range.line, rest_range.start_column, c
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+            None => {
+                return ParseResult {
+                    value: path,
+                    errors: vec![format!(
+                        "at {}:{}: expected single quote (').",
+                        rest_range.line, rest_range.start_column
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
+    }
+
+    // シングルクォートが来るまでインポートのパスを読み取る
+    // '/' もしくは '\' が来たら push する
+    // 上記以外でローマアルファベット、数字、ハイフン ('-')、アンダースコア ('_') が来たらパス文字列に追加する
+    // 上記以外もしくは終端が来たらエラーにする
+    let mut buf = String::new();
+    loop {
+        match pick_char(src, &rest_range) {
+            Some('\'') => {
+                rest_range.move_to_next_char();
+                path.push(buf);
+                break;
+            }
+            Some('/') | Some('\\') => {
+                rest_range.move_to_next_char();
+                path.push(buf);
+                buf = String::new();
+            }
+            Some(c) if c.is_ascii_alphanumeric() || c == '-' || c == '_' => {
+                rest_range.move_to_next_char();
+                buf.push(c);
+            }
+            Some(c) => {
+                return ParseResult {
+                    value: PathBuf::new(),
+                    errors: vec![format!(
+                        "at {}:{}: '{}' is invalid character as imported path.",
+                        rest_range.line, rest_range.start_column, c
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+            None => {
+                return ParseResult {
+                    value: PathBuf::new(),
+                    errors: vec![format!(
+                        "at {}:{}: expected single quote (').",
+                        rest_range.line, rest_range.start_column
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
+    }
+
+    // セミコロンが来るまで空白を読み飛ばす
+    // セミコロンや空白以外が来たり終端が来たらエラーにする
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(c) if c.is_ascii_whitespace() => {
+                rest_range.move_to_next_char();
+            }
+            Some(';') => {
+                rest_range.move_to_next_char();
+                break;
+            }
+            Some(c) => {
+                return ParseResult {
+                    value: path,
+                    errors: vec![format!(
+                        "at {}:{}: expected semicolon (';'), but actual is '{}'.",
+                        rest_range.line, rest_range.start_column, c
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+            None => {
+                return ParseResult {
+                    value: path,
+                    errors: vec![format!(
+                        "at {}:{}: expected semicolon (';').",
+                        rest_range.line, rest_range.start_column
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
+    }
+
+    // 残りは空白のみであることを確認する
+    // 空白以外が来たらエラーにする
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(c) if c.is_ascii_whitespace() => {
+                rest_range.move_to_next_char();
+            }
+            None => {
+                break;
+            }
+            Some(c) => {
+                return ParseResult {
+                    value: path,
+                    errors: vec![format!(
+                        "at {}:{}: unexpected character '{}'.",
+                        rest_range.line, rest_range.start_column, c
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
+    }
+
+    ParseResult {
+        value: path,
+        errors: vec![],
+        warnings: vec![],
+        rest_range,
+    }
+}
 
 pub fn parse_block_elements(
     src: &Vec<Vec<char>>,
@@ -36,7 +245,7 @@ pub fn parse_block_elements(
                     value: block_elements,
                     errors,
                     warnings,
-                    rest_range: rest_range,
+                    rest_range,
                 };
             }
         }

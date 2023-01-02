@@ -16,7 +16,7 @@ Markdown を基にしているが yicuiheng が使わない機能は実装せず
 - フローチャート、シーケンス図、ダイアグラムなど (mermaid形式) (not implemented)
 - (インライン|ブロック) 数式
 - (インライン|ブロック) コード
-- コード分割 (not implemented)
+- コード分割
 
 既存実装の Markdown を使うのに比べて以下の利点がある。
 - 推論規則 など yicuiheng が特別によく使う要素を自分にとって使いやすい形式で書ける
@@ -167,6 +167,6 @@ int main() {
 ### コード分割
 
 ```
-import hoge; // 同じディレクトリの hoge.bok を読み込む
-import hoge.fuga; // ./hoge/fuga.bok を読み込む
+import 'hoge'; // 同じディレクトリの hoge.bok を読み込む
+import 'hoge/fuga'; // ./hoge/fuga.bok を読み込む
 ```

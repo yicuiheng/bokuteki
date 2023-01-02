@@ -1,0 +1,5 @@
+import 'foo';
+import 'foo/bar' ;
+
+import の例です。`[foo](./foo.html)` と書くと foo.html にリンクをはれます。
+[こんなふうにね](./foo.html)
