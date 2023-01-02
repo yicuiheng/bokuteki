@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn compile(src_path: PathBuf) {
+pub fn build(src_path: PathBuf) {
     let printer = Printer::setup();
 
     let mut q = VecDeque::new();
@@ -11,7 +11,7 @@ pub fn compile(src_path: PathBuf) {
     q.push_back(PathBuf::from(src_path.file_name().unwrap()));
     while let Some(import_path) = q.pop_front() {
         if let Ok(content) = fs::read_to_string(root_path.join(&import_path)) {
-            let imports = compile_content(&printer, &import_path, content);
+            let imports = compile(&printer, &import_path, content);
             let import_base_path = import_path.parent().unwrap();
             q.append(
                 &mut imports
@@ -29,7 +29,7 @@ pub fn compile(src_path: PathBuf) {
     }
 }
 
-fn compile_content(printer: &Printer, src_path: &Path, content: String) -> Vec<PathBuf> {
+fn compile(printer: &Printer, src_path: &Path, content: String) -> Vec<PathBuf> {
     let content: Vec<Vec<char>> = content.lines().map(|line| line.chars().collect()).collect();
     let src_block_range = document::src_block_range(&content);
 

@@ -1,4 +1,4 @@
-mod compile;
+mod build;
 mod document;
 mod katex;
 mod lsp;
@@ -16,7 +16,7 @@ struct AppArgs {
 
 #[derive(Subcommand)]
 enum Action {
-    Compile { filepath: String },
+    Build { filepath: String },
     Lsp,
 }
 
@@ -25,9 +25,9 @@ async fn main() {
     init();
 
     match AppArgs::parse().action {
-        Action::Compile { filepath } => {
+        Action::Build { filepath } => {
             use std::path::PathBuf;
-            compile::compile(PathBuf::from(filepath));
+            build::build(PathBuf::from(filepath));
         }
         Action::Lsp => lsp::run().await,
     }
