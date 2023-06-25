@@ -35,7 +35,12 @@ fn compile(printer: &Printer, src_path: &Path, content: String) -> Vec<PathBuf> 
 
     let result = parse::parse_document(&content, src_block_range);
     if result.errors.is_empty() {
-        printer.print(&content, src_path, result.value.block_elements);
+        let title = if let Some(title) = result.value.preamble.get("title") {
+            title
+        } else {
+            "Document"
+        };
+        printer.print(&content, src_path, result.value.block_elements, title);
     }
 
     for error in &result.errors {

@@ -1,4 +1,5 @@
 use crate::document::*;
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
@@ -20,9 +21,37 @@ pub fn parse_document(
     src_range: BlockRange,
 ) -> ParseResult<Document, BlockRange> {
     let mut rest_range = src_range;
+    let mut preamble = HashMap::new();
     let mut imports = vec![];
     let mut errors = vec![];
     let mut warnings = vec![];
+
+    // 空行は無視する
+    loop {
+        if let Some(top_line_range) = rest_range.front() {
+            if starts_with(src, "%", *top_line_range) {
+                let mut preamble_result = parse_preamble(src, *top_line_range);
+                let v = preamble_result.value;
+                preamble.insert(v.0, v.1);
+                errors.append(&mut preamble_result.errors);
+                warnings.append(&mut preamble_result.warnings);
+                rest_range.pop_front();
+            } else {
+                break;
+            }
+        } else {
+            return ParseResult {
+                value: Document {
+                    preamble,
+                    block_elements: vec![],
+                    imports: vec![],
+                },
+                errors,
+                warnings,
+                rest_range,
+            };
+        }
+    }
 
     // 空行は無視する
     loop {
@@ -39,6 +68,7 @@ pub fn parse_document(
         } else {
             return ParseResult {
                 value: Document {
+                    preamble,
                     block_elements: vec![],
                     imports,
                 },
@@ -55,12 +85,66 @@ pub fn parse_document(
     let rest_range = block_elements_result.rest_range;
     ParseResult {
         value: Document {
+            preamble,
             block_elements: block_elements_result.value,
             imports,
         },
         errors,
         warnings,
         rest_range,
+    }
+}
+
+fn parse_preamble(
+    src: &Vec<Vec<char>>,
+    inline_range: InlineRange,
+) -> ParseResult<(String, String), InlineRange> {
+    assert!(starts_with(src, "%", inline_range));
+    let mut key = String::new();
+    let mut value = String::new();
+    let mut rest_range = inline_range.consume("%".len());
+
+    // key のパース
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(c) if c.is_ascii_whitespace() => {
+                rest_range.move_to_next_char();
+                break;
+            }
+            Some(c) => {
+                key.push(c);
+                rest_range.move_to_next_char();
+            }
+            None => {
+                return ParseResult {
+                    value: (key, String::new()),
+                    errors: vec![format!(
+                        "at {}:{}: expected preamble value",
+                        rest_range.line, rest_range.start_column
+                    )],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
+    }
+
+    // value のパース
+    loop {
+        match pick_char(src, &rest_range) {
+            Some(c) => {
+                value.push(c);
+                rest_range.move_to_next_char();
+            }
+            None => {
+                return ParseResult {
+                    value: (key, value),
+                    errors: vec![],
+                    warnings: vec![],
+                    rest_range,
+                }
+            }
+        }
     }
 }
 
