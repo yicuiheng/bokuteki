@@ -44,7 +44,13 @@ impl Printer {
         }
     }
 
-    pub fn print(&self, src: &Vec<Vec<char>>, src_path: &Path, block_elements: Vec<BlockElement>) {
+    pub fn print(
+        &self,
+        src: &Vec<Vec<char>>,
+        src_path: &Path,
+        block_elements: Vec<BlockElement>,
+        title_content: &str,
+    ) {
         // 出力する内容を構築
         let template_content = fs::read_to_string(self.template_path.join("template.html"))
             .expect("failed to read template.html");
@@ -53,6 +59,7 @@ impl Printer {
         let css_path = relative_to_root.join("bokuteki.css");
         let js_path = relative_to_root.join("bokuteki.js");
         let html_content = template_content
+            .replace("{title-string}", title_content)
             .replace("{body-string}", &body_content)
             .replace("{bokuteki-css-path}", &css_path.display().to_string())
             .replace("{bokuteki-js-path}", &js_path.display().to_string());

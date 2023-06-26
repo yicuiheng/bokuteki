@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Document {
+    pub preamble: HashMap<String, String>,
     pub block_elements: Vec<BlockElement>,
     pub imports: Vec<PathBuf>,
 }
